@@ -3,6 +3,8 @@ package com.mjpz.http.generator.view;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.swing.JButton;
 import javax.swing.JFrame;
@@ -12,13 +14,13 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 
-import com.mjpz.http.generator.net.GenHttpAgent;
 import com.mjpz.net.HttpAgent;
+import com.mjpz.net.MjpzError;
 
 public class MainFrame {
 
 	/**
-	 * ������
+	 * ����
 	 */
 	public JFrame init() {
 		JFrame frame = new JFrame();
@@ -33,7 +35,7 @@ public class MainFrame {
 	}
 	
 	/**
-	 * ���͕��̎擾
+	 * ��͕��̎擾
 	 * @return
 	 */
 	public JPanel getInputPanel() {
@@ -99,8 +101,24 @@ public class MainFrame {
 
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
-				HttpAgent agent = new GenHttpAgent(host.getText());
-				
+				HttpAgent agent = new HttpAgent(host.getText()){
+
+					/**
+					 * レスポンスを解析する
+					 * 
+					 * おばーライド用
+					 */
+					public void analyzeResponse() {
+						result.append(this.getHeader());
+					}
+				};
+				Map<String, String> addtionalHeaders = new HashMap<String, String>();
+				try {
+					agent.send(method.getText(), path.getText(), httpv.getText(), body.getText(), addtionalHeaders);
+				} catch (MjpzError e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 			}
 			
 		});

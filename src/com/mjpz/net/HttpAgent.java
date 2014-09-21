@@ -78,7 +78,7 @@ public class HttpAgent {
 	 * 
 	 * @return
 	 */
-	protected int getResponseCode() {
+	public int getResponseCode() {
 		return responseCode;
 	}
 
@@ -87,7 +87,7 @@ public class HttpAgent {
 	 * 
 	 * @return
 	 */
-	protected String getResponseState() {
+	public String getResponseState() {
 		return responseState;
 	}
 
@@ -96,7 +96,7 @@ public class HttpAgent {
 	 * 
 	 * @return
 	 */
-	protected String getHeader() {
+	public String getHeader() {
 		return header;
 	}
 
@@ -105,7 +105,7 @@ public class HttpAgent {
 	 * 
 	 * @return
 	 */
-	protected byte[] getBody() {
+	public byte[] getBody() {
 		return body;
 	}
 
@@ -116,7 +116,7 @@ public class HttpAgent {
 	 * 
 	 * @return
 	 */
-	protected String getHost() {
+	public String getHost() {
 		return this.host;
 	}
 
@@ -125,13 +125,13 @@ public class HttpAgent {
 	 * 
 	 * @throws IOException
 	 */
-	protected void send(String method, String path, String body, Map<String, String> addtionalHeaders) throws MjpzError {
+	public void send(String method, String path, String version, String body, Map<String, String> addtionalHeaders) throws MjpzError {
 		try {
 			this.connect();
 			if (DEBUG) {
 				System.out.println("====================");
 			}
-			this.pushRequest(method, path, body, addtionalHeaders);
+			this.pushRequest(method, path, version, body, addtionalHeaders);
 			if (DEBUG) {
 				System.out.println(getRequest());
 				System.out.println("--------------------");
@@ -140,17 +140,20 @@ public class HttpAgent {
 			this.analyzeResponse();
 		} catch (IOException e) {
 			throw new MjpzError(MjpzError.NETWORK_ERROR, "Network Error:" + e.getMessage(), e);
+		} finally {
+			this.close();
 		}
 	}
 
 	/**
 	 * リクエストを送る
 	 */
-	protected void pushRequest(String method, String path, String body, Map<String, String> addtionalHeaders) throws MjpzError, IOException {
+	protected void pushRequest(String method, String path, String version, String body, Map<String, String> addtionalHeaders) throws MjpzError, IOException {
 		push(method);
 		push(" ");
 		push(path);
-		push(" HTTP/1.0");
+		push(" HTTP/");
+		push(version);
 		newLine();
 
 		push("Host:");
@@ -173,11 +176,11 @@ public class HttpAgent {
 			newLine();
 		}
 
-		if (body != null && body.length() > 0) {
-			push("Content-Type:");
-			push("application/json");
-			newLine();
-		}
+//		if (body != null && body.length() > 0) {
+//			push("Content-Type:");
+//			push("application/json");
+//			newLine();
+//		}
 
 		push("Content-Length: ");
 		push(Integer.toString(body.getBytes().length));
@@ -193,7 +196,7 @@ public class HttpAgent {
 	 * 
 	 * おばーライド用
 	 */
-	protected void analyzeResponse() {
+	public void analyzeResponse() {
 	}
 
 	/**
@@ -339,7 +342,7 @@ public class HttpAgent {
 	 * 
 	 * @return
 	 */
-	protected String getRequest() {
+	public String getRequest() {
 		return requestBuffer.toString();
 	}
 
@@ -350,7 +353,7 @@ public class HttpAgent {
 	 * 
 	 * @return
 	 */
-	protected String getResponseDump() {
+	public String getResponseDump() {
 		if (body == null) {
 			return "";
 		}
@@ -388,7 +391,7 @@ public class HttpAgent {
 	/**
 	 * ディスクリプタを解放
 	 */
-	protected void close() {
+	public void close() {
 		if (ch != null) {
 			try {
 				ch.close();
@@ -412,7 +415,7 @@ public class HttpAgent {
 	 * 
 	 * @return userAgentを返す。
 	 */
-	protected String getUserAgent() {
+	public String getUserAgent() {
 		return userAgent;
 	}
 
@@ -423,7 +426,7 @@ public class HttpAgent {
 	 * 
 	 * @param userAgent を userAgent に設定する。
 	 */
-	protected void setUserAgent(String userAgent) {
+	public void setUserAgent(String userAgent) {
 		this.userAgent = userAgent;
 	}
 
@@ -435,7 +438,7 @@ public class HttpAgent {
 	 * @param outputFile
 	 * @throws MjpzError
 	 */
-	protected void setOutputFile(File outputFile) throws MjpzError {
+	public void setOutputFile(File outputFile) throws MjpzError {
 		try {
 			@SuppressWarnings("resource")
 			RandomAccessFile rwFile = new RandomAccessFile(outputFile, "rw");
@@ -452,7 +455,7 @@ public class HttpAgent {
 	 * 
 	 * @return contentLengthを返す。
 	 */
-	protected int getContentLength() {
+	public int getContentLength() {
 		return contentLength;
 	}
 
@@ -463,7 +466,7 @@ public class HttpAgent {
 	 * 
 	 * @param contentLength を contentLength に設定する。
 	 */
-	protected void setContentLength(int contentLength) {
+	public void setContentLength(int contentLength) {
 		this.contentLength = contentLength;
 	}
 
@@ -472,7 +475,7 @@ public class HttpAgent {
 	 * <pre></pre>
 	 * @return isCanceledを返す。
 	 */
-	protected boolean isCancelled() {
+	public boolean isCancelled() {
 		return isCancelled;
 	}
 
@@ -481,7 +484,7 @@ public class HttpAgent {
 	 * <pre></pre>
 	 * @param isCancelled を isCanceled に設定する。
 	 */
-	protected void cancel() {
+	public void cancel() {
 		this.isCancelled = true;
 	}
 
