@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
@@ -17,11 +18,9 @@ import java.util.regex.Pattern;
 
 public class HttpAgent {
 
-	private static final boolean DEBUG = false;
-
+	private Log log;
 	private static final String CRLF = "\r\n";
 	private Pattern PATTERN_RESPONSE_FIRST_LINE = Pattern.compile("^HTTP/[0-9]+\\.[0-9]+ ([0-9]+) ([^\\n]+)", Pattern.MULTILINE);
-
 	/** タイムアウト */
 	protected static final int TIME_OUT = 30 * 1000;
 	/** ソケット */
@@ -43,7 +42,7 @@ public class HttpAgent {
 	/** レスポンスヘッダー */
 	private String header;
 	/** リクエストボディ */
-	private byte[] body;
+	private ByteBuffer body;
 	/** ダウンロード先 */
 	private FileChannel outputChanel;
 	/** キャンセル */
@@ -51,20 +50,27 @@ public class HttpAgent {
 
 	/**
 	 * コンストラクタ
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @param host ホスト名
 	 */
 	protected HttpAgent(String host) {
 		this.host = host;
 	}
+	
+	public void purge() {
+		if (body == null) {
+			return;
+		}
+		body.clear();
+	}
 
 	/**
 	 * コンストラクタ
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @param host ホスト名
 	 * @param userAgent ユーザーエージェント
 	 */
@@ -75,7 +81,7 @@ public class HttpAgent {
 
 	/**
 	 * HTTPレスポンスコードの取得
-	 * 
+	 *
 	 * @return
 	 */
 	public int getResponseCode() {
@@ -84,7 +90,7 @@ public class HttpAgent {
 
 	/**
 	 * HTTPレスポンスの取得ステータスの取得
-	 * 
+	 *
 	 * @return
 	 */
 	public String getResponseState() {
@@ -93,7 +99,7 @@ public class HttpAgent {
 
 	/**
 	 * HTTPヘッダーの取得
-	 * 
+	 *
 	 * @return
 	 */
 	public String getHeader() {
@@ -102,18 +108,23 @@ public class HttpAgent {
 
 	/**
 	 * HTTPバディの取得
-	 * 
+	 *
 	 * @return
 	 */
 	public byte[] getBody() {
-		return body;
+		
+		body.flip();
+		byte[] dst = new byte[body.limit()];
+		body.get(dst);
+		
+		return dst;
 	}
 
 	/**
 	 * ホスト名の取得
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @return
 	 */
 	public String getHost() {
@@ -122,24 +133,25 @@ public class HttpAgent {
 
 	/**
 	 * リクエスト送信
-	 * 
+	 *
 	 * @throws IOException
 	 */
-	public void send(String method, String path, String version, String body, Map<String, String> addtionalHeaders) throws MjpzError {
+	public void send(String method, String path, String version, String body, Map<String, String> addtionalHeaders) throws HttpException {
 		try {
 			this.connect();
-			if (DEBUG) {
-				System.out.println("====================");
+			if (log != null) {
+				log.debug("====================");
 			}
 			this.pushRequest(method, path, version, body, addtionalHeaders);
-			if (DEBUG) {
-				System.out.println(getRequest());
-				System.out.println("--------------------");
+			if (log != null) {
+				log.debug(getRequest());
+				log.debug("--------------------");
 			}
 			this.pullResponse();
 			this.analyzeResponse();
 		} catch (IOException e) {
-			throw new MjpzError(MjpzError.NETWORK_ERROR, "Network Error:" + e.getMessage(), e);
+			throw new HttpException(HttpException.NETWORK_ERROR, 
+					String.format("Network Error:%s, host:%s, path:%s", e.getMessage(), this.host, path), e);
 		} finally {
 			this.close();
 		}
@@ -148,18 +160,16 @@ public class HttpAgent {
 	/**
 	 * リクエストを送る
 	 */
-	protected void pushRequest(String method, String path, String version, String body, Map<String, String> addtionalHeaders) throws MjpzError, IOException {
+	protected void pushRequest(String method, String path, String version, String body, Map<String, String> addtionalHeaders) throws HttpException, IOException {
 		push(method);
 		push(" ");
 		push(path);
 		push(" HTTP/");
 		push(version);
 		newLine();
-
 		push("Host:");
 		push(getHost());
 		newLine();
-
 		if (addtionalHeaders != null) {
 			Set<String> keys = addtionalHeaders.keySet();
 			for (String key : keys) {
@@ -169,31 +179,26 @@ public class HttpAgent {
 				newLine();
 			}
 		}
-
 		if ((addtionalHeaders == null || !addtionalHeaders.containsKey("User-Agent")) && userAgent != null) {
 			push("User-Agent:");
 			push(userAgent);
 			newLine();
 		}
-
-//		if (body != null && body.length() > 0) {
-//			push("Content-Type:");
-//			push("application/json");
-//			newLine();
-//		}
-
+// if (body != null && body.length() > 0) {
+// push("Content-Type:");
+// push("application/json");
+// newLine();
+// }
 		push("Content-Length: ");
 		push(Integer.toString(body.getBytes().length));
 		newLine();
-
 		newLine();
-
 		push(body);
 	}
 
 	/**
 	 * レスポンスを解析する
-	 * 
+	 *
 	 * おばーライド用
 	 */
 	public void analyzeResponse() {
@@ -201,7 +206,7 @@ public class HttpAgent {
 
 	/**
 	 * コネクションを貼る
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	private void connect() throws IOException {
@@ -212,15 +217,15 @@ public class HttpAgent {
 
 	/**
 	 * レスポンスを引っ張る
-	 * 
+	 *
 	 * @throws IOException
 	 */
-	private void pullResponse() throws IOException, MjpzError {
-		ByteBuffer bodybuf = null;
+	private void pullResponse() throws IOException, HttpException {
 		ByteBuffer wkBuf = ByteBuffer.allocate(128 * 1024);
 		int loadedLength = 0;
 		long length = 0;
 		long bodyPos = 0;
+		try {
 		do {
 			if (isCancelled) {
 				break;
@@ -231,13 +236,13 @@ public class HttpAgent {
 				byte b = wkBuf.get();
 				int pos = wkBuf.position();
 				if (b == 0x0a && wkBuf.get(pos - 1) == 0x0a && wkBuf.get(pos - 2) == 0x0d && wkBuf.get(pos - 3) == 0x0a) {
-					// headerの終わり
+// headerの終わり
 					byte[] dst = new byte[pos];
 					wkBuf.position(0);
 					wkBuf.get(dst, 0, pos);
 					header = new String(dst);
-					if (DEBUG) {
-						System.out.println(header);
+					if (log != null) {
+						log.debug(header);
 					}
 					wkBuf.position(pos);
 					bodyPos = pos;
@@ -250,10 +255,9 @@ public class HttpAgent {
 					if (matcher.find()) {
 						String responseCodeString = matcher.group(1);
 						responseCode = Integer.parseInt(responseCodeString);
-
 						responseState = matcher.group(2);
-						if (DEBUG) {
-							System.out.printf("responseCode=%d, responseState=%s\n", responseCode, responseState);
+						if (log != null) {
+							log.debug(String.format("responseCode=%d, responseState=%s", responseCode, responseState));
 						}
 					}
 				}
@@ -262,51 +266,47 @@ public class HttpAgent {
 					if (matcher.find()) {
 						String contentLengthString = matcher.group(1);
 						contentLength = Integer.parseInt(contentLengthString);
-						bodybuf = ByteBuffer.allocate(contentLength);
-						if (DEBUG) {
-							System.out.printf("contentLength=%d\n", contentLength);
+						body = ByteBuffer.allocate(contentLength);
+						if (log != null) {
+							log.debug(String.format("contentLength=%d", contentLength));
 						}
 					} else {
-						bodybuf = ByteBuffer.allocate(128 * 1024 * 10);
+						body = ByteBuffer.allocate(128 * 1024 * 10);
 					}
 				}
-
 				int nowLoadLength = wkBuf.limit() - wkBuf.position();
 				if (responseCode == 200 && outputChanel != null) {
 					outputChanel.write(wkBuf);
 				} else {
-					bodybuf.put(wkBuf);
+					body.put(wkBuf);
 				}
-				// プログレス
+// プログレス
 				loadedLength += nowLoadLength;
 				onProgress(nowLoadLength, loadedLength, contentLength);
 			}
 			wkBuf.clear();
 		} while (length > 0);
-		
-		if (bodybuf != null) {
-			bodybuf.flip();
-			body = new byte[bodybuf.limit()];
-			bodybuf.get(body);
-		}
-
-		if (DEBUG) {
-			System.out.println(getResponseDump());
+		if (log != null && contentLength < 1024) {
+			log.debug(getResponseDump());
 			if (body != null) {
-				System.out.println(new String(body));
+				log.debug(new String(getBody()));
 			}
 		}
-
 		if (responseCode != 200) {
-			throw new HttpError(responseCode, responseState, getRequest(), header, body != null ? new String(body) : "", getResponseDump());
+			throw new HttpException(responseCode, responseState, getRequest(), header, body != null ? new String(getBody()) : "", getResponseDump());
+		}
+		} finally {
+			if (outputChanel != null) {
+				outputChanel.close();
+			}
 		}
 	}
 
 	/**
 	 * プログレス通知用
-	 * 
+	 *
 	 * 継承したクラスで、オーバーライドして下さい。
-	 * 
+	 *
 	 * @param nowLoadLength 今回読み込みサイズ
 	 * @param loadedLength 読み込み済みサイズ
 	 * @param contentLength コンテントレングス。0の場合は不明
@@ -316,7 +316,7 @@ public class HttpAgent {
 
 	/**
 	 * 文字列をサーバーに送る
-	 * 
+	 *
 	 * @param str
 	 * @throws IOException
 	 */
@@ -327,7 +327,7 @@ public class HttpAgent {
 
 	/**
 	 * 改行コードを送る
-	 * 
+	 *
 	 * @throws IOException
 	 */
 	protected void newLine() throws IOException {
@@ -337,9 +337,9 @@ public class HttpAgent {
 
 	/**
 	 * リクエストを取得する
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @return
 	 */
 	public String getRequest() {
@@ -348,23 +348,23 @@ public class HttpAgent {
 
 	/**
 	 * レスポンスのダンプを取得する
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @return
 	 */
 	public String getResponseDump() {
 		if (body == null) {
 			return "";
 		}
-		return getDump(body);
+		return getDump(getBody());
 	}
 
 	/**
 	 * ダンプ取得
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @param bytes
 	 * @return
 	 */
@@ -380,7 +380,11 @@ public class HttpAgent {
 			sb.append(String.format(chipLabel, b));
 			if (index++ > 0 && index % 8 == 0) {
 				lineBuffer.flip();
-				sb.append(String.format(indexLabel, new String(lineBuffer.array()), index));
+				try {
+					sb.append(String.format(indexLabel, new String(lineBuffer.array(), "UTF-8"), index));
+				} catch (UnsupportedEncodingException e) {
+					sb.append(String.format(indexLabel, new String(lineBuffer.array()), index));
+				}
 				lineBuffer.clear();
 			}
 		}
@@ -410,9 +414,9 @@ public class HttpAgent {
 
 	/**
 	 * userAgentの取得
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @return userAgentを返す。
 	 */
 	public String getUserAgent() {
@@ -421,9 +425,9 @@ public class HttpAgent {
 
 	/**
 	 * userAgentの設定
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @param userAgent を userAgent に設定する。
 	 */
 	public void setUserAgent(String userAgent) {
@@ -432,27 +436,27 @@ public class HttpAgent {
 
 	/**
 	 * ファイルチャネル登録
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @param outputFile
-	 * @throws MjpzError
+	 * @throws HttpException
 	 */
-	public void setOutputFile(File outputFile) throws MjpzError {
+	public void setOutputFile(File outputFile) throws HttpException {
 		try {
 			@SuppressWarnings("resource")
 			RandomAccessFile rwFile = new RandomAccessFile(outputFile, "rw");
 			outputChanel = rwFile.getChannel();
 		} catch (FileNotFoundException e) {
-			throw new MjpzError(MjpzError.PARAM_ERROR, "No Exists:" + e.getMessage(), e);
+			throw new HttpException(HttpException.PARAM_ERROR, "No Exists:" + e.getMessage(), e);
 		}
 	}
 
 	/**
 	 * contentLengthの取得
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @return contentLengthを返す。
 	 */
 	public int getContentLength() {
@@ -461,9 +465,9 @@ public class HttpAgent {
 
 	/**
 	 * contentLengthの設定
-	 * 
+	 *
 	 * <pre></pre>
-	 * 
+	 *
 	 * @param contentLength を contentLength に設定する。
 	 */
 	public void setContentLength(int contentLength) {
@@ -472,7 +476,9 @@ public class HttpAgent {
 
 	/**
 	 * isCanceledの取得
+	 * 
 	 * <pre></pre>
+	 * 
 	 * @return isCanceledを返す。
 	 */
 	public boolean isCancelled() {
@@ -481,12 +487,22 @@ public class HttpAgent {
 
 	/**
 	 * isCanceledの設定
+	 * 
 	 * <pre></pre>
+	 * 
 	 * @param isCancelled を isCanceled に設定する。
 	 */
 	public void cancel() {
 		this.isCancelled = true;
 	}
 
-}
+	/**
+	 * logの設定
+	 * <pre></pre>
+	 * @param log を log に設定する。
+	 */
+	public void setLog(Log log) {
+		this.log = log;
+	}
 
+}

@@ -15,7 +15,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 
 import com.mjpz.net.HttpAgent;
-import com.mjpz.net.MjpzError;
+import com.mjpz.net.HttpException;
 
 public class MainFrame {
 
@@ -115,7 +115,8 @@ public class MainFrame {
 				Map<String, String> addtionalHeaders = new HashMap<String, String>();
 				try {
 					agent.send(method.getText(), path.getText(), httpv.getText(), body.getText(), addtionalHeaders);
-				} catch (MjpzError e) {
+					agent.purge();
+				} catch (HttpException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
