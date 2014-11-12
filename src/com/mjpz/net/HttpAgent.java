@@ -1,6 +1,8 @@
 package com.mjpz.net;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -9,26 +11,44 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 
 public class HttpAgent {
 
 	private Log log;
 	private static final String CRLF = "\r\n";
 	private Pattern PATTERN_RESPONSE_FIRST_LINE = Pattern.compile("^HTTP/[0-9]+\\.[0-9]+ ([0-9]+) ([^\\n]+)", Pattern.MULTILINE);
+	private Pattern PATTERN_LOCATION = Pattern.compile("Location\\s*:\\s*https?://([^/]+)(\\S+)", Pattern.MULTILINE);
+	private Pattern PATTERN_GZIP = Pattern.compile(".*gzip.*");
 	/** タイムアウト */
 	protected static final int TIME_OUT = 30 * 1000;
+	/**
+	 * 302 Found時に遷移するか。デフォルトtrue
+	 */
+	private boolean movedTemporarily = true;
+	/**
+	 * Gzipであるか
+	 */
+	private boolean gzipFlag;
 	/** ソケット */
 	private Socket socket;
 	/** チャネル */
 	private SocketChannel ch;
 	/** ホスト名 */
 	private String host;
+	/** メソッド */
+	private String method;
+	/** バージョン */
+	private String version;
+	private Map<String, String> addtionalHeaders;
 	/** ユーザーエージェント */
 	private String userAgent;
 	/** リクエスト文字列のバッファ */
@@ -62,6 +82,9 @@ public class HttpAgent {
 	public void purge() {
 		if (body == null) {
 			return;
+		}
+		if (log != null) {
+			log.debug(String.format("--purge--%s", this.body.toString()));
 		}
 		body.clear();
 	}
@@ -116,8 +139,29 @@ public class HttpAgent {
 		body.flip();
 		byte[] dst = new byte[body.limit()];
 		body.get(dst);
+		if (log != null) {
+			log.debug(String.format("--getBody--%s", this.body.toString()));
+		}
 		
 		return dst;
+	}
+
+	/**
+	 * HTTPバディの取得
+	 *
+	 * @return
+	 * @throws HttpException 
+	 */
+	public String getBodyString(String encode) throws HttpException {
+		byte[] dst = getBody();
+		String result;
+		try {
+			result = new String(dst, encode);
+			this.purge();
+			return result;
+		} catch (UnsupportedEncodingException e) {
+			throw new HttpException(HttpException.INTERNAL_ERROR, "encode", e);
+		}
 	}
 
 	/**
@@ -130,6 +174,21 @@ public class HttpAgent {
 	public String getHost() {
 		return this.host;
 	}
+	
+	/**
+	 * 初期化
+	 * 
+	 * <pre></pre>
+	 */
+	private void init() {
+		this.purge();
+		this.gzipFlag = false;
+		this.requestBuffer = new StringBuilder();
+		this.contentLength = 0;
+		this.responseCode = 0;
+		this.responseState = null;
+		this.header = null;
+	}
 
 	/**
 	 * リクエスト送信
@@ -137,6 +196,10 @@ public class HttpAgent {
 	 * @throws IOException
 	 */
 	public void send(String method, String path, String version, String body, Map<String, String> addtionalHeaders) throws HttpException {
+		this.method = method;
+		this.version = version;
+		this.addtionalHeaders = addtionalHeaders;
+		this.init();
 		try {
 			this.connect();
 			if (log != null) {
@@ -173,9 +236,13 @@ public class HttpAgent {
 		if (addtionalHeaders != null) {
 			Set<String> keys = addtionalHeaders.keySet();
 			for (String key : keys) {
+				String value = addtionalHeaders.get(key);
+				if (outputChanel == null && key.equalsIgnoreCase("Accept-Encoding") && PATTERN_GZIP.matcher(value).matches()) {
+					this.gzipFlag = true;
+				}
 				push(key);
 				push(":");
-				push(addtionalHeaders.get(key));
+				push(value);
 				newLine();
 			}
 		}
@@ -225,6 +292,19 @@ public class HttpAgent {
 		int loadedLength = 0;
 		long length = 0;
 		long bodyPos = 0;
+		File temp = null;
+		FileChannel output = null;
+		if (outputChanel != null) {
+			output = outputChanel;
+		} else if (this.gzipFlag) {
+			temp = File.createTempFile(String.format("%s_%d_%s", "hazip", System.nanoTime(), Thread.currentThread().getName()), ".zip");
+			if (log != null) {
+				log.debug(temp.getAbsolutePath());
+				log.debug("-----");
+			}
+			output = new RandomAccessFile(temp, "rw").getChannel();
+		}
+		
 		try {
 		do {
 			if (isCancelled) {
@@ -275,8 +355,8 @@ public class HttpAgent {
 					}
 				}
 				int nowLoadLength = wkBuf.limit() - wkBuf.position();
-				if (responseCode == 200 && outputChanel != null) {
-					outputChanel.write(wkBuf);
+				if (responseCode == 200 && output != null) {
+					output.write(wkBuf);
 				} else {
 					body.put(wkBuf);
 				}
@@ -286,14 +366,41 @@ public class HttpAgent {
 			}
 			wkBuf.clear();
 		} while (length > 0);
-		if (log != null && contentLength < 1024) {
+		if (log != null && contentLength < 1024 && !this.gzipFlag) {
 			log.debug(getResponseDump());
 			if (body != null) {
 				log.debug(new String(getBody()));
 			}
 		}
+		if (this.movedTemporarily && 300 <= responseCode && responseCode < 400) {
+			Matcher m = PATTERN_LOCATION.matcher(header);
+			if (m.find()) {
+				String host = m.group(1);
+				String path = m.group(2);
+				this.host = host;
+				this.purge();
+				this.send(method, path, version, "", addtionalHeaders);
+			}
+			return;
+		}
 		if (responseCode != 200) {
 			throw new HttpException(responseCode, responseState, getRequest(), header, body != null ? new String(getBody()) : "", getResponseDump());
+		}
+		if (temp != null) {
+			// gzip解凍
+			output.close();
+			ReadableByteChannel gzch = Channels.newChannel(new BufferedInputStream(new GZIPInputStream(new FileInputStream(temp))));
+			try {
+				this.body = ByteBuffer.allocate(128 * 1024 * 10);
+				do {
+					length = gzch.read(wkBuf);
+					wkBuf.flip();
+					this.body.put(wkBuf);
+					wkBuf.clear();
+				} while (length > 0);
+			} finally {
+				gzch.close();
+			}
 		}
 		} finally {
 			if (outputChanel != null) {
@@ -503,6 +610,14 @@ public class HttpAgent {
 	 */
 	public void setLog(Log log) {
 		this.log = log;
+	}
+
+	public boolean isMovedTemporarily() {
+		return movedTemporarily;
+	}
+
+	public void setMovedTemporarily(boolean movedTemporarily) {
+		this.movedTemporarily = movedTemporarily;
 	}
 
 }
