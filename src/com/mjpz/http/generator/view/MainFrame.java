@@ -1,25 +1,24 @@
 package com.mjpz.http.generator.view;
 
-import java.awt.BorderLayout;
-import java.awt.Container;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.InputMethodEvent;
+import java.awt.event.InputMethodListener;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.swing.JButton;
-import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.ProgressMonitor;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 import com.mjpz.net.HttpAgent;
 import com.mjpz.net.HttpException;
@@ -50,6 +49,16 @@ public class MainFrame {
 		panel.setLayout(null);
 		
 		int y = 10;
+		JLabel urll = new JLabel("URL : ");
+		urll.setBounds(10, y, 80, 30);
+		panel.add(urll);
+		
+		final JTextField url = new JTextField(20);
+		url.setText("http://google.com/");
+		url.setBounds(90, y, 800, 30);
+		panel.add(url);
+
+		y += 30;
 		final JTextField method = new JTextField(5);
 		method.setText("GET");
 		method.setBounds(10, y, 80, 30);
@@ -78,6 +87,36 @@ public class MainFrame {
 		host.setText("google.com");
 		host.setBounds(90, y, 600, 30);
 		panel.add(host);
+		
+		url.getDocument().addDocumentListener(new DocumentListener(){
+
+			@Override
+			public void changedUpdate(DocumentEvent arg0) {
+				// TODO Auto-generated method stub
+				
+			}
+
+			@Override
+			public void insertUpdate(DocumentEvent de) {
+				String hostStrOrg = url.getText();
+				String hostStr = hostStrOrg.replaceFirst("https*://", "");
+				int index = hostStr.indexOf('/');
+				if (index > 0) {
+					path.setText(hostStr.substring(index));
+					hostStr = hostStr.substring(0, index);
+				}
+				if (!hostStrOrg.equals(hostStr)) {
+					host.setText(hostStr);
+				}
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent arg0) {
+				// TODO Auto-generated method stub
+				
+			}
+			
+		});
 		
 		JLabel csl = new JLabel("charset : ");
 		csl.setBounds(690, y, 80, 30);
