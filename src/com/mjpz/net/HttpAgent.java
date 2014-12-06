@@ -67,6 +67,8 @@ public class HttpAgent {
 	private FileChannel outputChanel;
 	/** キャンセル */
 	private boolean isCancelled;
+	/** ProgressMonitor on/off */
+	private boolean enableProgressMonitor;
 
 	/**
 	 * コンストラクタ
