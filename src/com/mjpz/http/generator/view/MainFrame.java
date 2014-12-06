@@ -1,5 +1,7 @@
 package com.mjpz.http.generator.view;
 
+import java.awt.BorderLayout;
+import java.awt.Container;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -9,9 +11,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.swing.JButton;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -71,9 +75,18 @@ public class MainFrame {
 		panel.add(hostl);
 		
 		final JTextField host = new JTextField(20);
-		host.setText("www.nokiatheatrelalive.com");
+		host.setText("google.com");
 		host.setBounds(90, y, 600, 30);
 		panel.add(host);
+		
+		JLabel csl = new JLabel("charset : ");
+		csl.setBounds(690, y, 80, 30);
+		panel.add(csl);
+		
+		final JTextField charset = new JTextField(20);
+		charset.setText("UTF-8");
+		charset.setBounds(770, y, 100, 30);
+		panel.add(charset);
 
 		y += 30;
 		JLabel headerl = new JLabel("header");
@@ -127,10 +140,9 @@ public class MainFrame {
 
 					@Override
 					public void run() {
+						final MjpzProgressDialog dialog = new MjpzProgressDialog(frame, false);
 						result.setText("");
 						HttpAgent agent = new HttpAgent(host.getText()){
-
-							private ProgressMonitor pm;
 							/**
 							 * レスポンスを解析する
 							 * 
@@ -140,13 +152,13 @@ public class MainFrame {
 								result.append(this.getHeader());
 								String resString;
 								try {
-									resString = this.getBodyString("UTF-8");
-									System.out.println(resString);
+									resString = this.getBodyString(charset.getText());
 									result.append(resString);
 								} catch (HttpException e) {
 									// TODO Auto-generated catch block
 									e.printStackTrace();
 								}
+								dialog.setVisible(false);
 							}
 
 							/**
@@ -159,11 +171,13 @@ public class MainFrame {
 							 * @param contentLength コンテントレングス。0の場合は不明
 							 */
 							protected void onProgress(int nowLoadLength, int loadedLength, int contentLength) {
-								if (pm == null) {
-									pm = new ProgressMonitor(frame, null, null, 0, contentLength);
+								if (!dialog.isVisible()) {
+									dialog.init(host.getText(), 0, contentLength);
+									dialog.setVisible(true);
 								}
-								pm.setProgress(loadedLength);
+								dialog.setProgress(loadedLength);
 							}
+
 						};
 						Map<String, String> addtionalHeaders = new HashMap<String, String>();
 						String headerString = header.getText();
@@ -176,6 +190,7 @@ public class MainFrame {
 						} catch (HttpException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
+							dialog.setVisible(false);
 						}
 					}}).start();
 			}

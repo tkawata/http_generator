@@ -365,6 +365,9 @@ public class HttpAgent {
 // プログレス
 				loadedLength += nowLoadLength;
 				onProgress(nowLoadLength, loadedLength, contentLength);
+				if (loadedLength >= contentLength) {
+					break;
+				}
 			}
 			wkBuf.clear();
 		} while (length > 0);
