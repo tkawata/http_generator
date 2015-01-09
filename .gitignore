@@ -2,3 +2,6 @@
 .project
 *.class
 .setting
+/nbproject/private/
+/build/
+/dist/

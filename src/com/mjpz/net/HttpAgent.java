@@ -308,11 +308,19 @@ public class HttpAgent {
 		}
 		
 		try {
+			HttpTimer timer = new HttpTimer();
 		do {
 			if (isCancelled) {
 				break;
 			}
+			// タイマー
+			timer.check(ch);
+			try {
 			length = ch.read(wkBuf);
+			} catch (java.nio.channels.AsynchronousCloseException e) {
+				break;
+			}
+			timer.cancel();
 			wkBuf.flip();
 			while (bodyPos == 0 && wkBuf.position() < wkBuf.limit()) {
 				byte b = wkBuf.get();
@@ -353,7 +361,8 @@ public class HttpAgent {
 							log.debug(String.format("contentLength=%d", contentLength));
 						}
 					} else {
-						body = ByteBuffer.allocate(128 * 1024 * 10);
+						contentLength =128 * 1024 * 10;
+						body = ByteBuffer.allocate(contentLength);
 					}
 				}
 				int nowLoadLength = wkBuf.limit() - wkBuf.position();
@@ -365,16 +374,22 @@ public class HttpAgent {
 // プログレス
 				loadedLength += nowLoadLength;
 				onProgress(nowLoadLength, loadedLength, contentLength);
-				if (loadedLength >= contentLength) {
+				if ((contentLength > 0 && loadedLength >= contentLength)) {
 					break;
 				}
+			}
+			if (log != null) {
+				log.debug("length=" + length);
+				log.debug("isConnected=" + ch.isConnected());
 			}
 			wkBuf.clear();
 		} while (length > 0);
 		if (log != null && contentLength < 1024 && !this.gzipFlag) {
-			log.debug(getResponseDump());
+//			log.debug(getResponseDump());
 			if (body != null) {
 				log.debug(new String(getBody()));
+				log.debug("body=" + body);
+				log.debug("loadedLength=" + loadedLength);
 			}
 		}
 		if (this.movedTemporarily && 300 <= responseCode && responseCode < 400) {

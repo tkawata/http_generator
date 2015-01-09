@@ -22,6 +22,7 @@ import javax.swing.event.DocumentListener;
 
 import com.mjpz.net.HttpAgent;
 import com.mjpz.net.HttpException;
+import com.mjpz.net.Log;
 
 public class MainFrame {
 
@@ -218,6 +219,11 @@ public class MainFrame {
 							}
 
 						};
+                                                
+                                                Log log = new Log();
+                                                log.setDebug(true);
+                                                agent.setLog(log);
+                                                
 						Map<String, String> addtionalHeaders = new HashMap<String, String>();
 						String headerString = header.getText();
 						Matcher m = headerPattern.matcher(headerString);
